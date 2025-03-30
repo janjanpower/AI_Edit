@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-
+import os
 from utils.dialog import simpledialog
 
 class OutputPage:

@@ -224,7 +224,8 @@ class ApplicationPage:
             self.app.root.after(0, self.update_cuts_preview)
 
         except Exception as e:
-            self.app.root.after(0, lambda: messagebox.showerror("錯誤", f"應用過程中發生錯誤: {str(e)}"))
+            error_msg = str(e)
+            self.app.root.after(0, lambda msg=error_msg: messagebox.showerror("錯誤", f"錯誤: {msg}"))
         finally:
             self.app.root.after(0, lambda: self.app.enable_all_buttons())
             self.app.root.after(0, lambda: self.app.status_var.set("應用完成"))
