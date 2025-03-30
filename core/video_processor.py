@@ -543,56 +543,122 @@ class VideoProcessor:
 
         return {'color_hist': hist}
 
+    # 完整替換 export_video 函數，徹底避免 lambda 作用域問題
+
     def export_video(self, input_path, output_path, cut_points, app, progress_window, progress_var, percent_label):
         """導出最終剪輯影片，包含原始音頻"""
+
+        # 定義所有需要的回調函數，避免使用 lambda
+        def show_error(message):
+            """顯示錯誤訊息"""
+            messagebox.showerror("錯誤", message)
+            progress_window.destroy()
+            app.enable_all_buttons()
+
+        def show_success(message):
+            """顯示成功訊息"""
+            messagebox.showinfo("成功", message)
+            progress_window.destroy()
+            app.enable_all_buttons()
+
+        def update_status(message):
+            """更新狀態欄"""
+            app.status_var.set(message)
+
+        def update_progress(value):
+            """更新進度條"""
+            progress_var.set(value)
+            percent_label.config(text=f"{value}%")
+
+        def finish_with_error(message):
+            """錯誤完成處理"""
+            app.root.after(0, lambda: show_error(message))
+
+        def finish_with_success(message, final_path):
+            """成功完成處理"""
+            app.root.after(0, lambda: show_success(message))
+            app.root.after(0, lambda: update_status(f"影片已導出至: {final_path}"))
+
+        # 正式執行導出
         try:
-            # 加载目標影片
+            import os
+            import subprocess
+            import shutil
+
+            # 檢查輸出目錄
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                try:
+                    os.makedirs(output_dir)
+                except Exception as e:
+                    return finish_with_error(f"無法創建輸出目錄: {str(e)}")
+
+            # 確認可寫入
+            try:
+                temp_test_file = output_path + ".test"
+                with open(temp_test_file, 'w') as f:
+                    f.write("test")
+                os.remove(temp_test_file)
+            except Exception as e:
+                return finish_with_error(f"輸出路徑不可寫: {str(e)}")
+
+            # 檢查剪輯點
+            if not cut_points:
+                return finish_with_error("沒有設定剪輯點")
+
+            # 打開影片
             cap = cv2.VideoCapture(input_path)
             if not cap.isOpened():
-                app.root.after(0, lambda: messagebox.showerror("錯誤", "無法打開目標素材"))
-                return
+                return finish_with_error("無法打開目標素材")
 
             # 獲取影片信息
             fps = cap.get(cv2.CAP_PROP_FPS)
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            # 創建臨時視頻文件（僅視頻無音頻）
+            # 創建臨時檔案
             temp_output = output_path + ".temp.mp4"
+            if os.path.exists(temp_output):
+                try:
+                    os.remove(temp_output)
+                except Exception as e:
+                    return finish_with_error(f"無法刪除已存在的臨時文件: {str(e)}")
 
-            # 創建輸出影片寫入器
+            # 建立檔案寫入器
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(temp_output, fourcc, fps, (width, height))
+            if not out.isOpened():
+                return finish_with_error("無法創建輸出視頻文件")
 
-            # 準備剪輯點，轉換為幀索引
+            # 處理剪輯點
             cut_frames = [int(cut * fps) for cut in cut_points]
-            # 在開頭加上0，在結尾加上總幀數
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             cut_frames = [0] + cut_frames + [frame_count]
 
-            # 創建片段列表（開始幀和結束幀的對）
+            # 建立片段
             segments = []
             for i in range(len(cut_frames) - 1):
-                # 如果是偶數序號的片段，保留它
                 if i % 2 == 0:
                     segments.append((cut_frames[i], cut_frames[i+1]))
 
             # 計算總幀數
             total_frames_to_process = sum(end - start for start, end in segments)
+            if total_frames_to_process <= 0:
+                cap.release()
+                return finish_with_error("沒有要處理的視頻幀")
+
+            # 處理視頻
+            app.root.after(0, lambda: update_status("正在處理視頻幀..."))
             processed_frames = 0
 
-            # 處理每個片段
-            for seg_idx, (start, end) in enumerate(segments):
-                # 設置開始位置
+            for start, end in segments:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-
-                # 讀取並寫入該片段的每一幀
                 for frame_idx in range(start, end):
                     ret, frame = cap.read()
                     if not ret:
                         break
 
-                    # 應用旋轉（如果有）
+                    # 應用旋轉
                     if app.target_rotation != 0:
                         if app.target_rotation == 90:
                             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
@@ -606,11 +672,10 @@ class VideoProcessor:
 
                     # 更新進度
                     processed_frames += 1
-                    progress = int((processed_frames / total_frames_to_process) * 80)  # 視頻處理占80%進度
-                    progress_var.set(progress)
-                    app.root.after(0, lambda p=progress: percent_label.config(text=f"{p}%"))
+                    progress = int((processed_frames / total_frames_to_process) * 80)
+                    app.root.after(0, lambda p=progress: update_progress(p))
 
-                    # 每10幀更新一次UI，避免過於頻繁
+                    # 更新UI
                     if processed_frames % 10 == 0:
                         app.root.update_idletasks()
 
@@ -618,76 +683,106 @@ class VideoProcessor:
             cap.release()
             out.release()
 
+            # 檢查臨時檔案
+            if not os.path.exists(temp_output) or os.path.getsize(temp_output) == 0:
+                return finish_with_error("視頻處理失敗，臨時文件創建失敗")
+
             # 處理音頻
-            app.root.after(0, lambda: app.status_var.set("處理音頻中..."))
-            progress_var.set(80)  # 音頻處理開始於80%進度
-            app.root.after(0, lambda: percent_label.config(text="80%"))
+            app.root.after(0, lambda: update_status("處理音頻中..."))
+            app.root.after(0, lambda: update_progress(80))
 
-            # 使用ffmpeg處理音頻（需要安裝ffmpeg）
+            # 確保輸出路徑不存在
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except Exception as e:
+                    return finish_with_error(f"無法刪除已存在的輸出文件: {str(e)}")
+
+            # 檢查 ffmpeg
             try:
-                import subprocess
-                import os
+                subprocess.run(["ffmpeg", "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                app.root.after(0, lambda: update_status("未檢測到ffmpeg，將輸出無聲影片"))
+                shutil.copy(temp_output, output_path)
 
-                # 創建包含音頻的最終輸出文件
-                # 創建音頻剪輯指令
-                audio_filter = ""
-                for i, (start, end) in enumerate(segments):
-                    if i > 0:
-                        audio_filter += ";"
-                    start_time = start / fps
-                    end_time = end / fps
-                    duration = end_time - start_time
-                    if i == 0:
-                        audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
-                    else:
-                        audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
+                if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    if os.path.exists(temp_output):
+                        try:
+                            os.remove(temp_output)
+                        except:
+                            pass
 
-                # 連接所有音頻片段
+                    app.root.after(0, lambda: update_progress(100))
+                    return finish_with_success("影片導出成功！", output_path)
+                else:
+                    return finish_with_error("影片輸出失敗")
+
+            # 創建音頻處理命令
+            audio_filter = ""
+            for i, (start, end) in enumerate(segments):
+                if i > 0:
+                    audio_filter += ";"
+                start_time = start / fps
+                end_time = end / fps
+                if i == 0:
+                    audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
+                else:
+                    audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
+
+            # 連接音頻片段
+            if segments:
                 for i in range(len(segments)):
                     audio_filter += f"[a{i}]"
                 audio_filter += f"concat=n={len(segments)}:v=0:a=1[outa]"
 
-                # 使用ffmpeg合併視頻和處理後的音頻
+                # FFmpeg 命令
                 cmd = [
                     "ffmpeg",
-                    "-i", temp_output,  # 視頻輸入
-                    "-i", input_path,    # 音頻輸入
+                    "-i", temp_output,
+                    "-i", input_path,
                     "-filter_complex", audio_filter,
-                    "-map", "0:v",       # 使用第一個輸入的視頻
-                    "-map", "[outa]",    # 使用處理後的音頻
-                    "-c:v", "copy",      # 複製視頻編碼（不重新編碼）
-                    "-c:a", "aac",       # 音頻編碼為AAC
-                    "-shortest",         # 使用最短的輸入長度
+                    "-map", "0:v",
+                    "-map", "[outa]",
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-shortest",
+                    "-y",
                     output_path
                 ]
 
-                # 執行ffmpeg命令
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                _, stderr = process.communicate()
+                # 執行 FFmpeg
+                try:
+                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    stdout, stderr = process.communicate()
 
-                # 更新進度
-                progress_var.set(100)
-                app.root.after(0, lambda: percent_label.config(text="100%"))
+                    if process.returncode != 0:
+                        app.root.after(0, lambda: update_status("音頻處理出錯，將輸出無聲影片"))
+                        print(f"FFmpeg錯誤: {stderr.decode('utf-8', errors='replace')}")
+                        shutil.copy(temp_output, output_path)
 
-                # 刪除臨時文件
+                    # 檢查輸出
+                    if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                        shutil.copy(temp_output, output_path)
+
+                except Exception as e:
+                    app.root.after(0, lambda: update_status(f"音頻處理出錯: {str(e)}"))
+                    print(f"音頻處理錯誤: {str(e)}")
+                    shutil.copy(temp_output, output_path)
+
+            # 最終檢查
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                app.root.after(0, lambda: update_progress(100))
+
+                # 清理臨時文件
                 if os.path.exists(temp_output):
-                    os.remove(temp_output)
+                    try:
+                        os.remove(temp_output)
+                    except Exception as e:
+                        print(f"刪除臨時文件失敗: {str(e)}")
 
-            except Exception as e:
-                app.root.after(0, lambda: app.status_var.set(f"音頻處理出錯，將輸出無聲影片: {str(e)}"))
-                # 如果音頻處理失敗，至少保留視頻部分
-                import os
-                os.rename(temp_output, output_path)
-                progress_var.set(100)
-                app.root.after(0, lambda: percent_label.config(text="100%"))
-
-            # 導出完成
-            app.root.after(0, lambda: app.status_var.set("導出完成"))
-            app.root.after(0, lambda: messagebox.showinfo("成功", "影片導出成功！"))
-            app.root.after(0, lambda: progress_window.destroy())
-            app.root.after(0, lambda: app.enable_all_buttons())  # 啟用所有按鈕
+                return finish_with_success("影片導出成功！", output_path)
+            else:
+                return finish_with_error("影片輸出失敗")
 
         except Exception as e:
-            app.root.after(0, lambda: messagebox.showerror("錯誤", f"導出過程中發生錯誤: {str(e)}"))
-            app.root.after(0, lambda: progress_window.destroy())
-            app.root.after(0, lambda: app.enable_all_buttons())  # 啟用所有按鈕
+            return finish_with_error(f"導出過程中發生錯誤: {str(e)}")

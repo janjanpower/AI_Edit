@@ -194,8 +194,12 @@ class ObjectSelectionTool:
         # 如果找到目標，存儲其特徵
         if best_target:
             self.app.target_object_features = best_target
+
+            # 獲取中文名稱
+            chinese_name = self.app.get_chinese_name(best_target['class'])
+
             self.status_label.config(
-                text=f"已識別為 {best_target['class']} (置信度: {best_target['confidence']:.2f})"
+                text=f"已識別為 {chinese_name} (置信度: {best_target['confidence']:.2f})"
             )
         else:
             # 如果沒有檢測到物件，使用顏色直方圖作為特徵

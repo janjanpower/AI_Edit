@@ -249,7 +249,9 @@ class AnalysisPage:
                                 reverse=True)
 
             for obj_name, (count, _, timestamps) in sorted_objects[:8]:  # 顯示前8個物件
-                results.append(f"  {obj_name}: 出現 {count} 次")
+                # 使用中文名稱
+                chinese_name = self.app.get_chinese_name(obj_name)
+                results.append(f"  {chinese_name} ({obj_name}): 出現 {count} 次")
 
             # 添加重要物件的剪輯模式
             results.append("")
@@ -257,7 +259,8 @@ class AnalysisPage:
 
             for i, obj in enumerate(self.app.important_objects[:3]):  # 只顯示前3個重要物件
                 if obj in self.app.object_durations:
-                    results.append(f"  {obj}: 平均展示時長 {self.app.object_durations[obj]:.2f} 秒")
+                    chinese_name = self.app.get_chinese_name(obj)
+                    results.append(f"  {chinese_name} ({obj}): 平均展示時長 {self.app.object_durations[obj]:.2f} 秒")
         else:
             results.append("  未檢測到物件，請確認物件檢測模型是否正確加載")
 
@@ -274,15 +277,16 @@ class AnalysisPage:
     def update_object_selection(self):
         """更新物件選擇介面"""
         # 檢查是否已有物件選擇框架
-        if hasattr(self, 'object_selection_frame'):
+        if hasattr(self, 'object_selection_frame') and self.object_selection_frame:
             self.object_selection_frame.destroy()
 
         # 創建物件選擇框架
         self.object_selection_frame = ttk.LabelFrame(self.frame, text="選擇重要物件")
-        self.object_selection_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.object_selection_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=5)  # 使用grid而不是pack以保持一致性
 
         # 創建物件選擇的檢查框
         self.object_vars = {}
+        self.object_checkbuttons = {}  # 儲存檢查框引用以便後續更新
 
         if self.app.example_objects:
             # 排序物件，出現次數最多的在前
@@ -294,18 +298,31 @@ class AnalysisPage:
             check_frame = ttk.Frame(self.object_selection_frame)
             check_frame.pack(fill=tk.X, padx=5, pady=5)
 
+            # 建立標題行
+            ttk.Label(check_frame, text="重要物件選擇", font=("Arial", 10, "bold")).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 5))
+
             # 每行最多4個檢查框
             for i, (obj_name, (count, _, _)) in enumerate(sorted_objects[:12]):  # 最多顯示12個物件
+                # 獲取中文名稱
+                chinese_name = self.app.get_chinese_name(obj_name)
+
+                # 設置變數，並根據是否在重要物件列表中決定初始值
                 self.object_vars[obj_name] = tk.BooleanVar(value=(obj_name in self.app.important_objects))
 
-                row = i // 4
+                row = (i // 4) + 1  # 從第1行開始（第0行是標題）
                 col = i % 4
 
-                ttk.Checkbutton(
+                # 建立檢查框
+                cb = ttk.Checkbutton(
                     check_frame,
-                    text=f"{obj_name} ({count})",
-                    variable=self.object_vars[obj_name]
-                ).grid(row=row, column=col, padx=5, pady=2, sticky=tk.W)
+                    text=f"{chinese_name} ({count})",
+                    variable=self.object_vars[obj_name],
+                    style='Important.TCheckbutton' if obj_name in self.app.important_objects else 'TCheckbutton'
+                )
+                cb.grid(row=row, column=col, padx=5, pady=2, sticky=tk.W)
+
+                # 儲存檢查框引用
+                self.object_checkbuttons[obj_name] = cb
 
             # 添加確認按鈕
             ttk.Button(
@@ -314,6 +331,16 @@ class AnalysisPage:
                 command=self.update_important_objects
             ).pack(pady=5)
 
+            # 添加已選擇項目的標籤
+            selected_text = "已選擇: " + ", ".join([self.app.get_chinese_name(obj) for obj in self.app.important_objects])
+            self.selected_label = ttk.Label(self.object_selection_frame, text=selected_text)
+            self.selected_label.pack(pady=5, anchor="w")
+
+        # 創建自定義風格來突顯已選中的項目
+        style = ttk.Style()
+        style.configure('Important.TCheckbutton', font=('Arial', 10, 'bold'))
+
+
     def update_important_objects(self):
         """更新重要物件列表"""
         # 更新重要物件列表
@@ -321,8 +348,19 @@ class AnalysisPage:
             obj for obj, var in self.object_vars.items() if var.get()
         ]
 
+        # 更新檢查框樣式
+        for obj_name, checkbutton in self.object_checkbuttons.items():
+            if obj_name in self.app.important_objects:
+                checkbutton.configure(style='Important.TCheckbutton')
+            else:
+                checkbutton.configure(style='TCheckbutton')
+
+        # 更新已選擇項目標籤
+        selected_text = "已選擇: " + ", ".join([self.app.get_chinese_name(obj) for obj in self.app.important_objects])
+        self.selected_label.config(text=selected_text)
+
         # 更新狀態
-        self.app.status_var.set(f"已更新重要物件: {', '.join(self.app.important_objects)}")
+        self.app.status_var.set(f"已更新重要物件: {', '.join([self.app.get_chinese_name(obj) for obj in self.app.important_objects])}")
 
         # 如果沒有選擇物件，使用默認的前5個
         if not self.app.important_objects:
@@ -330,4 +368,16 @@ class AnalysisPage:
                                 key=lambda x: x[1][0],
                                 reverse=True)[:5]
             self.app.important_objects = [obj[0] for obj in sorted_objects]
-            self.app.status_var.set(f"使用默認重要物件: {', '.join(self.app.important_objects)}")
+
+            # 更新檢查框狀態
+            for obj_name in self.app.important_objects:
+                if obj_name in self.object_vars:
+                    self.object_vars[obj_name].set(True)
+                    if obj_name in self.object_checkbuttons:
+                        self.object_checkbuttons[obj_name].configure(style='Important.TCheckbutton')
+
+            # 更新已選擇項目標籤
+            selected_text = "已選擇: " + ", ".join([self.app.get_chinese_name(obj) for obj in self.app.important_objects])
+            self.selected_label.config(text=selected_text)
+
+            self.app.status_var.set(f"使用默認重要物件: {', '.join([self.app.get_chinese_name(obj) for obj in self.app.important_objects])}")

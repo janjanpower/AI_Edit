@@ -354,7 +354,9 @@ class ApplicationPage:
         for obj in self.app.important_objects:
             if obj in self.app.target_objects:
                 occurrences = self.app.target_objects[obj][0]
-                target_important.append(f"{obj} ({occurrences}次)")
+                # 使用中文名稱
+                chinese_name = self.app.get_chinese_name(obj)
+                target_important.append(f"{chinese_name} ({occurrences}次)")
 
         preview = [
             f"目標素材總長度: {self.app.target_duration:.2f} 秒",
@@ -375,3 +377,4 @@ class ApplicationPage:
             secs = int(cut % 60)
             msec = int((cut - int(cut)) * 100)
             self.app.output_page.cuts_listbox.insert(tk.END, f"剪輯點 {i+1}: {mins:02d}:{secs:02d}.{msec:02d}")
+

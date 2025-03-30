@@ -239,7 +239,9 @@ class OutputPage:
         if nearby_objects:
             for obj, count in sorted(nearby_objects.items(), key=lambda x: x[1], reverse=True):
                 is_important = "★" if obj in self.app.important_objects else ""
-                details.append(f"  {obj}{is_important}: {count}次")
+                # 獲取中文名稱
+                chinese_name = self.app.get_chinese_name(obj)
+                details.append(f"  {chinese_name}{is_important}: {count}次")
         else:
             details.append("  未檢測到物件")
 
