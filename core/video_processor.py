@@ -544,7 +544,7 @@ class VideoProcessor:
         return {'color_hist': hist}
 
     def export_video(self, input_path, output_path, cut_points, app, progress_window, progress_var, percent_label):
-        """導出最終剪輯影片，移除淡入淡出效果"""
+        """導出最終剪輯影片，包含原始音頻"""
         try:
             # 加载目標影片
             cap = cv2.VideoCapture(input_path)
@@ -557,9 +557,12 @@ class VideoProcessor:
             width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+            # 創建臨時視頻文件（僅視頻無音頻）
+            temp_output = output_path + ".temp.mp4"
+
             # 創建輸出影片寫入器
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            out = cv2.VideoWriter(temp_output, fourcc, fps, (width, height))
 
             # 準備剪輯點，轉換為幀索引
             cut_frames = [int(cut * fps) for cut in cut_points]
@@ -603,7 +606,7 @@ class VideoProcessor:
 
                     # 更新進度
                     processed_frames += 1
-                    progress = int((processed_frames / total_frames_to_process) * 100)
+                    progress = int((processed_frames / total_frames_to_process) * 80)  # 視頻處理占80%進度
                     progress_var.set(progress)
                     app.root.after(0, lambda p=progress: percent_label.config(text=f"{p}%"))
 
@@ -614,6 +617,69 @@ class VideoProcessor:
             # 釋放資源
             cap.release()
             out.release()
+
+            # 處理音頻
+            app.root.after(0, lambda: app.status_var.set("處理音頻中..."))
+            progress_var.set(80)  # 音頻處理開始於80%進度
+            app.root.after(0, lambda: percent_label.config(text="80%"))
+
+            # 使用ffmpeg處理音頻（需要安裝ffmpeg）
+            try:
+                import subprocess
+                import os
+
+                # 創建包含音頻的最終輸出文件
+                # 創建音頻剪輯指令
+                audio_filter = ""
+                for i, (start, end) in enumerate(segments):
+                    if i > 0:
+                        audio_filter += ";"
+                    start_time = start / fps
+                    end_time = end / fps
+                    duration = end_time - start_time
+                    if i == 0:
+                        audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
+                    else:
+                        audio_filter += f"[0:a]atrim=start={start_time}:end={end_time},asetpts=PTS-STARTPTS[a{i}]"
+
+                # 連接所有音頻片段
+                for i in range(len(segments)):
+                    audio_filter += f"[a{i}]"
+                audio_filter += f"concat=n={len(segments)}:v=0:a=1[outa]"
+
+                # 使用ffmpeg合併視頻和處理後的音頻
+                cmd = [
+                    "ffmpeg",
+                    "-i", temp_output,  # 視頻輸入
+                    "-i", input_path,    # 音頻輸入
+                    "-filter_complex", audio_filter,
+                    "-map", "0:v",       # 使用第一個輸入的視頻
+                    "-map", "[outa]",    # 使用處理後的音頻
+                    "-c:v", "copy",      # 複製視頻編碼（不重新編碼）
+                    "-c:a", "aac",       # 音頻編碼為AAC
+                    "-shortest",         # 使用最短的輸入長度
+                    output_path
+                ]
+
+                # 執行ffmpeg命令
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                _, stderr = process.communicate()
+
+                # 更新進度
+                progress_var.set(100)
+                app.root.after(0, lambda: percent_label.config(text="100%"))
+
+                # 刪除臨時文件
+                if os.path.exists(temp_output):
+                    os.remove(temp_output)
+
+            except Exception as e:
+                app.root.after(0, lambda: app.status_var.set(f"音頻處理出錯，將輸出無聲影片: {str(e)}"))
+                # 如果音頻處理失敗，至少保留視頻部分
+                import os
+                os.rename(temp_output, output_path)
+                progress_var.set(100)
+                app.root.after(0, lambda: percent_label.config(text="100%"))
 
             # 導出完成
             app.root.after(0, lambda: app.status_var.set("導出完成"))

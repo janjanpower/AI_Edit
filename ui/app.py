@@ -16,6 +16,9 @@ class IntelligentVideoEditor:
         self.root.geometry("900x700")
         self.root.configure(bg="#f0f0f0")
 
+        # 設置最小視窗尺寸，確保所有元素都可見
+        self.root.minsize(width=600, height=500)
+
         # 初始化變數
         self.example_video_path = None
         self.target_video_path = None
@@ -62,8 +65,39 @@ class IntelligentVideoEditor:
 
         # 設置UI
         self.create_ui()
+        # 在短暫延遲後觸發一次佈局更新，確保所有分頁都正確初始化
+        root.after(100, self.initialize_all_layouts)
+
+    def initialize_all_layouts(self):
+        """初始化所有分頁佈局"""
+        # 獲取當前選擇的分頁
+        current_tab = self.main_notebook.index("current")
+
+        # 依次切換到每個分頁並更新佈局
+        for i in range(self.main_notebook.index("end")):
+            self.main_notebook.select(i)
+            self.root.update_idletasks()  # 強制更新界面
+
+            # 調用對應頁面的更新佈局方法
+            if i == 0 and hasattr(self, 'analysis_page'):
+                self.analysis_page.update_ui_layout()
+            elif i == 1 and hasattr(self, 'application_page'):
+                self.application_page.update_ui_layout()
+            elif i == 2 and hasattr(self, 'output_page'):
+                self.output_page.update_ui_layout()
+
+        # 切回原來的分頁
+        self.main_notebook.select(current_tab)
 
     def create_ui(self):
+        # 創建主容器框架，使用網格布局
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True)
+
+        # 配置容器布局
+        main_container.columnconfigure(0, weight=1)
+        main_container.rowconfigure(0, weight=1)  # Notebook 可以擴展
+        main_container.rowconfigure(1, weight=0)  # 狀態欄固定高度
         # 主框架
         main_frame = ttk.Notebook(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -78,11 +112,51 @@ class IntelligentVideoEditor:
         main_frame.add(self.application_page.frame, text="應用到新素材")
         main_frame.add(self.output_page.frame, text="預覽與輸出")
 
+        # 綁定分頁切換事件
+        main_frame.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
+        # 綁定視窗大小變化事件
+        self.root.bind("<Configure>", self.on_window_resize)
+
+        # 存儲 Notebook 引用
+        self.main_notebook = main_frame
+
         # 狀態欄
         self.status_var = tk.StringVar()
         self.status_var.set("就緒")
         status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def on_tab_changed(self, event):
+        """處理分頁切換事件"""
+        # 獲取當前選擇的分頁索引
+        current_tab = self.main_notebook.index("current")
+
+        # 根據索引調用對應頁面的更新佈局方法
+        if current_tab == 0 and hasattr(self, 'analysis_page'):
+            self.analysis_page.update_ui_layout()
+        elif current_tab == 1 and hasattr(self, 'application_page'):
+            self.application_page.update_ui_layout()
+        elif current_tab == 2 and hasattr(self, 'output_page'):
+            self.output_page.update_ui_layout()
+
+        # 更新一下界面
+        self.root.update_idletasks()
+
+    def on_window_resize(self, event):
+        """處理視窗大小變化事件"""
+        # 只有當事件來源是主視窗時才處理
+        if event.widget == self.root:
+            # 獲取當前選擇的分頁索引
+            current_tab = self.main_notebook.index("current")
+
+            # 根據索引調用對應頁面的更新佈局方法
+            if current_tab == 0 and hasattr(self, 'analysis_page'):
+                self.analysis_page.update_ui_layout()
+            elif current_tab == 1 and hasattr(self, 'application_page'):
+                self.application_page.update_ui_layout()
+            elif current_tab == 2 and hasattr(self, 'output_page'):
+                self.output_page.update_ui_layout()
 
     def disable_all_buttons(self):
         """禁用所有操作按鈕"""

@@ -18,82 +18,195 @@ class ApplicationPage:
         self.object_selection_tool = None
 
     def setup_ui(self):
-        # 上傳目標素材區域
-        target_frame = ttk.LabelFrame(self.frame, text="上傳目標素材")
-        target_frame.pack(fill=tk.X, padx=10, pady=10)
+        # 頁面主框架
+        self.content_frame = ttk.Frame(self.frame)
+        self.content_frame.pack(fill=tk.BOTH, expand=True)
 
+        # 使用網格布局
+        self.content_frame.columnconfigure(0, weight=1)
+        self.content_frame.rowconfigure(1, weight=1)  # 預覽區域可擴展
+
+        # ==== 上傳目標素材區域 ====
+        target_frame = ttk.LabelFrame(self.content_frame, text="上傳目標素材")
+        target_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+
+        # 內部布局
+        target_frame.columnconfigure(1, weight=1)
+
+        # 上傳按鈕和標籤
         self.target_btn = ttk.Button(target_frame, text="選擇目標素材", command=self.select_target_video)
-        self.target_btn.pack(pady=10)
+        self.target_btn.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.target_video_label = ttk.Label(target_frame, text="尚未選擇素材")
-        self.target_video_label.pack(pady=5)
+        self.target_video_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # 影片旋轉控制
-        rotation_frame = ttk.Frame(target_frame)
-        rotation_frame.pack(fill=tk.X, pady=5)
-
-        ttk.Label(rotation_frame, text="影片旋轉：").pack(side=tk.LEFT, padx=5)
+        ttk.Label(target_frame, text="影片旋轉：").grid(row=1, column=0, padx=5, pady=5, sticky="w")
 
         # 建立旋轉按鈕
-        self.rotate_btn = ttk.Button(rotation_frame, text="旋轉 180°", command=self.toggle_rotation)
-        self.rotate_btn.pack(side=tk.LEFT, padx=5)
+        self.rotate_btn = ttk.Button(target_frame, text="旋轉 180°", command=self.toggle_rotation)
+        self.rotate_btn.grid(row=1, column=1, padx=5, pady=5, sticky="w")
         self.rotate_btn.config(state=tk.DISABLED)  # 初始禁用
 
-        # 目標影片預覽區域
-        preview_frame = ttk.LabelFrame(self.frame, text="目標素材預覽")
-        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # ==== 目標影片預覽區域 ====
+        preview_frame = ttk.LabelFrame(self.content_frame, text="目標素材預覽")
+        preview_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
 
-        self.target_canvas = tk.Canvas(preview_frame, bg="black", width=640, height=360)
-        self.target_canvas.pack(pady=10)
+        # 配置預覽框架
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(0, weight=1)
 
-        # 應用剪輯風格區域
-        apply_frame = ttk.LabelFrame(self.frame, text="應用剪輯風格")
-        apply_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.target_canvas = tk.Canvas(preview_frame, bg="black")
+        self.target_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # 物件優先設置
+        # ==== 應用剪輯風格區域 ====
+        apply_frame = ttk.LabelFrame(self.content_frame, text="應用剪輯風格")
+        apply_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+
+        # 配置應用框架
+        apply_frame.columnconfigure(0, weight=1)
+
+        # --- 物件優先設置 ---
         obj_frame = ttk.Frame(apply_frame)
-        obj_frame.pack(fill=tk.X, pady=5)
+        obj_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        ttk.Label(obj_frame, text="物件優先級:").pack(side=tk.LEFT, padx=10)
-        self.object_priority_var = tk.DoubleVar(value=0.7)  # 預設70%物件優先，30%場景變化
+        # 配置物件優先框架
+        obj_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(obj_frame, text="優先考慮:").grid(row=0, column=0, padx=5, sticky="w")
+
+        # 中間放滑桿
+        slider_frame = ttk.Frame(obj_frame)
+        slider_frame.grid(row=0, column=1, sticky="ew", padx=5)
+
+        # 配置滑桿框架
+        slider_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(slider_frame, text="場景變化").grid(row=0, column=0, padx=5, sticky="w")
+
+        self.object_priority_var = tk.DoubleVar(value=0.7)
         self.object_scale = ttk.Scale(
-            obj_frame,
+            slider_frame,
             from_=0.0,
             to=1.0,
             orient=tk.HORIZONTAL,
-            length=300,
             variable=self.object_priority_var
         )
-        self.object_scale.pack(side=tk.LEFT, padx=5)
-        ttk.Label(obj_frame, text="場景變化").pack(side=tk.LEFT)
-        ttk.Label(obj_frame, text="物件優先").pack(side=tk.RIGHT)
+        self.object_scale.grid(row=0, column=1, padx=10, sticky="ew")
 
-        # 剪輯密度調整
+        ttk.Label(slider_frame, text="物件優先").grid(row=0, column=2, padx=5, sticky="e")
+
+        # --- 剪輯密度調整 ---
         density_frame = ttk.Frame(apply_frame)
-        density_frame.pack(fill=tk.X, pady=5)
+        density_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
 
-        ttk.Label(density_frame, text="剪輯密度調整:").pack(side=tk.LEFT, padx=10)
+        # 配置密度框架
+        density_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(density_frame, text="剪輯密度:").grid(row=0, column=0, padx=5, sticky="w")
+
+        # 中間放滑桿
+        duration_slider_frame = ttk.Frame(density_frame)
+        duration_slider_frame.grid(row=0, column=1, sticky="ew", padx=5)
+
+        # 配置滑桿框架
+        duration_slider_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(duration_slider_frame, text="較長").grid(row=0, column=0, padx=5, sticky="w")
+
         self.density_var = tk.DoubleVar(value=1.0)
         self.density_scale = ttk.Scale(
-            density_frame,
+            duration_slider_frame,
             from_=0.5,
             to=1.5,
             orient=tk.HORIZONTAL,
-            length=300,
-            variable=self.density_var
+            variable=self.density_var,
+            command=self.update_estimated_duration
         )
-        self.density_scale.pack(side=tk.LEFT, padx=5)
-        ttk.Label(density_frame, text="低").pack(side=tk.LEFT)
-        ttk.Label(density_frame, text="高").pack(side=tk.RIGHT)
+        self.density_scale.grid(row=0, column=1, padx=10, sticky="ew")
 
-        # 套用按鈕
+        ttk.Label(duration_slider_frame, text="較短").grid(row=0, column=2, padx=5, sticky="e")
+
+        # 計算預估時間標籤
+        self.estimated_time_label = ttk.Label(density_frame, text="預估輸出長度: 計算中...")
+        self.estimated_time_label.grid(row=0, column=2, padx=10, sticky="e")
+
+        # --- 套用按鈕 ---
         self.apply_btn = ttk.Button(apply_frame, text="套用剪輯風格", command=self.apply_cutting_style)
-        self.apply_btn.pack(pady=10)
+        self.apply_btn.grid(row=2, column=0, padx=5, pady=10)
 
-        # 結果預覽
-        self.cut_preview_text = tk.Text(apply_frame, height=6, width=80)
-        self.cut_preview_text.pack(pady=10, padx=10, fill=tk.X)
+        # --- 結果預覽 ---
+        result_frame = ttk.LabelFrame(self.content_frame, text="剪輯預覽")
+        result_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
+
+        # 配置結果框架
+        result_frame.columnconfigure(0, weight=1)
+        result_frame.rowconfigure(0, weight=1)
+
+        self.cut_preview_text = tk.Text(result_frame, height=6)
+        self.cut_preview_text.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         self.cut_preview_text.config(state=tk.DISABLED)
+
+        # 初始化物件選擇工具為None
+        self.object_selection_tool = None
+
+        # 初始更新佈局
+        self.update_ui_layout()
+
+    def update_ui_layout(self):
+        """更新UI佈局以適應視窗大小變化或分頁切換"""
+        # 獲取當前框架尺寸
+        frame_width = self.frame.winfo_width()
+        frame_height = self.frame.winfo_height()
+
+        # 如果框架尺寸過小，使用合理的最小值
+        if frame_width < 10:
+            frame_width = 800
+        if frame_height < 10:
+            frame_height = 600
+
+        # 計算適合的預覽Canvas尺寸
+        canvas_width = min(640, frame_width - 30)
+        canvas_height = min(360, int(frame_height * 0.5))
+
+        # 更新Canvas尺寸
+        self.target_canvas.config(width=canvas_width, height=canvas_height)
+
+        # 更新預估時間標籤
+        self.update_estimated_duration()
+
+        # 刷新框架，確保變更生效
+        self.frame.update_idletasks()
+
+        # 如果有影片幀，重新顯示
+        if hasattr(self.app, 'target_cap') and self.app.target_cap is not None and self.app.target_cap.isOpened():
+            current_pos = self.app.target_cap.get(cv2.CAP_PROP_POS_FRAMES)
+            self.app.target_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.app.target_cap.read()
+            if ret:
+                from utils.image_utils import display_frame
+                display_frame(frame, self.target_canvas, self.app.target_rotation)
+            # 恢復原來的播放位置
+            self.app.target_cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
+
+    def update_estimated_duration(self, *args):
+        """更新估計的輸出影片長度"""
+        if not hasattr(self.app, 'target_duration') or self.app.target_duration <= 0:
+            return
+
+        # 根據密度因子計算預估長度
+        # 密度越高，保留的片段越少，影片越短
+        density_factor = self.density_var.get()
+        # 基準是原始時長的60%左右（根據剪輯風格可調整）
+        base_percentage = 0.6
+        estimated_percentage = base_percentage / density_factor
+        estimated_duration = self.app.target_duration * estimated_percentage
+
+        # 格式化為分:秒
+        minutes = int(estimated_duration // 60)
+        seconds = int(estimated_duration % 60)
+
+        self.estimated_time_label.config(text=f"預估輸出長度: {minutes:02d}:{seconds:02d}")
 
     def toggle_rotation(self):
         """切換影片旋轉角度"""

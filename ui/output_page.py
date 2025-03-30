@@ -11,32 +11,60 @@ class OutputPage:
         self.setup_ui()
 
     def setup_ui(self):
+        # 頁面主框架
+        self.content_frame = ttk.Frame(self.frame)
+        self.content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 使用網格布局
+        self.content_frame.columnconfigure(0, weight=1)
+        self.content_frame.rowconfigure(1, weight=1)  # 剪輯點列表可擴展
+
         # 輸出設置區域
-        output_frame = ttk.LabelFrame(self.frame, text="輸出設置")
-        output_frame.pack(fill=tk.X, padx=10, pady=10)
+        output_frame = ttk.LabelFrame(self.content_frame, text="輸出設置")
+        output_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+
+        # 配置輸出框架
+        output_frame.columnconfigure(1, weight=1)
 
         self.output_btn = ttk.Button(output_frame, text="選擇輸出位置", command=self.select_output_path)
-        self.output_btn.pack(pady=10)
+        self.output_btn.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.output_path_label = ttk.Label(output_frame, text="尚未選擇輸出位置")
-        self.output_path_label.pack(pady=5)
+        self.output_path_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # 確認剪輯點列表
-        cuts_frame = ttk.LabelFrame(self.frame, text="確認剪輯點")
-        cuts_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        cuts_frame = ttk.LabelFrame(self.content_frame, text="確認剪輯點")
+        cuts_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
 
-        # 顯示剪輯點的列表框
-        self.cuts_listbox = tk.Listbox(cuts_frame, height=10, width=80)
-        self.cuts_listbox.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+        # 配置剪輯點框架
+        cuts_frame.columnconfigure(0, weight=1)
+        cuts_frame.rowconfigure(0, weight=1)
 
+        # 顯示剪輯點的列表框和滾動條
+        cuts_list_frame = ttk.Frame(cuts_frame)
+        cuts_list_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        # 配置列表框架
+        cuts_list_frame.columnconfigure(0, weight=1)
+        cuts_list_frame.rowconfigure(0, weight=1)
+
+        self.cuts_listbox = tk.Listbox(cuts_list_frame)
+        self.cuts_listbox.grid(row=0, column=0, sticky="nsew")
+
+        cuts_scroll = ttk.Scrollbar(cuts_list_frame, orient=tk.VERTICAL, command=self.cuts_listbox.yview)
+        cuts_scroll.grid(row=0, column=1, sticky="ns")
+
+        self.cuts_listbox.config(yscrollcommand=cuts_scroll.set)
+
+        # 剪輯點操作按鈕
         cuts_btn_frame = ttk.Frame(cuts_frame)
-        cuts_btn_frame.pack(fill=tk.X, pady=5)
+        cuts_btn_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
 
         self.remove_btn = ttk.Button(cuts_btn_frame, text="移除選中的剪輯點", command=self.remove_selected_cut)
-        self.remove_btn.pack(side=tk.LEFT, padx=5)
+        self.remove_btn.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.add_btn = ttk.Button(cuts_btn_frame, text="增加剪輯點", command=self.add_cut_point)
-        self.add_btn.pack(side=tk.LEFT, padx=5)
+        self.add_btn.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # 剪輯點詳情按鈕
         self.detail_btn = ttk.Button(
@@ -44,23 +72,55 @@ class OutputPage:
             text="顯示剪輯點詳情",
             command=self.show_cut_details
         )
-        self.detail_btn.pack(side=tk.LEFT, padx=5)
-
-        # 導出按鈕
-        export_frame = ttk.Frame(self.frame)
-        export_frame.pack(fill=tk.X, pady=15)
-
-        self.export_btn = ttk.Button(export_frame, text="導出最終影片", command=self.export_final_video)
-        self.export_btn.pack(pady=10)
+        self.detail_btn.grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         # 剪輯點詳情顯示區
-        self.cut_details_frame = ttk.LabelFrame(self.frame, text="剪輯點詳情")
-        self.cut_details_frame.pack(fill=tk.X, padx=10, pady=10)
+        self.cut_details_frame = ttk.LabelFrame(self.content_frame, text="剪輯點詳情")
+        self.cut_details_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
 
-        self.cut_details_text = tk.Text(self.cut_details_frame, height=5, width=80)
-        self.cut_details_text.pack(pady=10, padx=10, fill=tk.X)
+        # 配置詳情框架
+        self.cut_details_frame.columnconfigure(0, weight=1)
+        self.cut_details_frame.rowconfigure(0, weight=1)
+
+        self.cut_details_text = tk.Text(self.cut_details_frame, height=5)
+        self.cut_details_text.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         self.cut_details_text.config(state=tk.DISABLED)
 
+        # 導出按鈕
+        export_frame = ttk.LabelFrame(self.content_frame, text="輸出設置")
+        export_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
+
+        # 配置導出框架
+        export_frame.columnconfigure(0, weight=1)
+
+        self.export_btn = ttk.Button(export_frame, text="導出最終影片", command=self.export_final_video)
+        self.export_btn.grid(row=0, column=0, padx=5, pady=5)
+
+        # 初始更新佈局
+        self.update_ui_layout()
+
+    def update_ui_layout(self):
+        """更新UI佈局以適應視窗大小變化或分頁切換"""
+        # 獲取當前框架尺寸
+        frame_width = self.frame.winfo_width()
+        frame_height = self.frame.winfo_height()
+
+        # 如果框架尺寸過小，使用合理的最小值
+        if frame_width < 10:
+            frame_width = 800
+        if frame_height < 10:
+            frame_height = 600
+
+        # 調整列表框的高度
+        list_height = max(8, min(15, int(frame_height / 50)))
+        self.cuts_listbox.config(height=list_height)
+
+        # 調整詳情文本區高度
+        text_height = max(4, min(8, int(frame_height / 100)))
+        self.cut_details_text.config(height=text_height)
+
+        # 刷新框架，確保變更生效
+        self.frame.update_idletasks()
     def disable_buttons(self):
         """禁用頁面按鈕"""
         self.output_btn.config(state=tk.DISABLED)

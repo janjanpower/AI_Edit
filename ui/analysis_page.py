@@ -13,46 +13,138 @@ class AnalysisPage:
         self.setup_ui()
 
     def setup_ui(self):
+        # 主框架使用網格布局
+        self.frame.columnconfigure(0, weight=1)
+        self.frame.rowconfigure(1, weight=1)  # 預覽區域可擴展
+
         # 上傳範例影片區域
         upload_frame = ttk.LabelFrame(self.frame, text="上傳範例影片")
-        upload_frame.pack(fill=tk.X, padx=10, pady=10)
+        upload_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+
+        # 上傳區域使用網格布局
+        upload_frame.columnconfigure(1, weight=1)
 
         self.upload_btn = ttk.Button(upload_frame, text="選擇範例影片", command=self.select_example_video)
-        self.upload_btn.pack(pady=10)
+        self.upload_btn.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.example_video_label = ttk.Label(upload_frame, text="尚未選擇影片")
-        self.example_video_label.pack(pady=5)
+        self.example_video_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # 範例影片預覽區域
         preview_frame = ttk.LabelFrame(self.frame, text="範例影片預覽")
-        preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        preview_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
 
-        self.example_canvas = tk.Canvas(preview_frame, bg="black", width=320, height=180)
-        self.example_canvas.pack(pady=10)
+        # 配置預覽框架
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(0, weight=1)
+
+        # 使用更大的初始尺寸，確保有足夠的顯示區域
+        self.example_canvas = tk.Canvas(preview_frame, bg="black", width=640, height=360)
+        self.example_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
         # 分析控制區域
-        control_frame = ttk.Frame(self.frame)
-        control_frame.pack(fill=tk.X, padx=10, pady=5)
+        control_frame = ttk.LabelFrame(self.frame, text="分析控制")
+        control_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+
+        # 分析控制使用網格布局
+        control_frame.columnconfigure(1, weight=1)
 
         self.analyze_btn = ttk.Button(control_frame, text="分析範例影片", command=self.analyze_example_video)
-        self.analyze_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        self.analyze_btn.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         # 添加物件分析選項
         self.object_analysis_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
+        obj_checkbox = ttk.Checkbutton(
             control_frame,
             text="啟用物件識別分析",
             variable=self.object_analysis_var
-        ).pack(side=tk.LEFT, padx=10, pady=5)
+        )
+        obj_checkbox.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         # 分析結果區域
         result_frame = ttk.LabelFrame(self.frame, text="分析結果")
-        result_frame.pack(fill=tk.X, padx=10, pady=10)
+        result_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
+
+        # 配置結果框架
+        result_frame.columnconfigure(0, weight=1)
+        result_frame.rowconfigure(0, weight=1)
 
         # 分析結果顯示區
-        self.result_text = tk.Text(result_frame, height=8, width=80)
-        self.result_text.pack(pady=10, padx=10, fill=tk.X)
+        self.result_text = tk.Text(result_frame, height=8)
+        self.result_text.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
         self.result_text.config(state=tk.DISABLED)
+
+        # 物件選擇區域 - 初始不創建，等分析完後動態添加
+        self.object_selection_frame = None
+
+        # 啟用所有框架的擴展功能
+        for child in self.frame.winfo_children():
+            if isinstance(child, ttk.LabelFrame):
+                for grandchild in child.winfo_children():
+                    if isinstance(grandchild, (tk.Canvas, tk.Text)):
+                        # Canvas 和 Text 需要能夠擴展
+                        grandchild.bind("<Configure>", lambda e, widget=grandchild: self.update_widget_size(e, widget))
+
+        # 綁定視窗大小變化事件
+        self.frame.bind("<Configure>", self.on_frame_configure)
+
+    def update_ui_layout(self):
+        """更新UI佈局以適應視窗大小變化或分頁切換"""
+        # 獲取當前框架尺寸
+        frame_width = self.frame.winfo_width()
+        frame_height = self.frame.winfo_height()
+
+        # 如果框架尺寸過小，使用合理的最小值
+        if frame_width < 10:
+            frame_width = 800
+        if frame_height < 10:
+            frame_height = 600
+
+        # 計算適合的預覽Canvas尺寸
+        canvas_width = min(640, frame_width - 30)
+        canvas_height = min(360, int(frame_height * 0.5))
+
+        # 更新Canvas尺寸
+        self.example_canvas.config(width=canvas_width, height=canvas_height)
+
+        # 刷新框架，確保變更生效
+        self.frame.update_idletasks()
+
+        # 如果有影片幀，重新顯示
+        if hasattr(self.app, 'example_cap') and self.app.example_cap is not None and self.app.example_cap.isOpened():
+            current_pos = self.app.example_cap.get(cv2.CAP_PROP_POS_FRAMES)
+            self.app.example_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.app.example_cap.read()
+            if ret:
+                from utils.image_utils import display_frame
+                display_frame(frame, self.example_canvas, self.app.example_rotation)
+            # 恢復原來的播放位置
+            self.app.example_cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
+
+    def on_frame_configure(self, event):
+        """處理框架大小變化事件"""
+        # 更新所有子元件尺寸
+        width = event.width
+        height = event.height
+
+        # 確保預覽區域得到足夠空間
+        for child in self.frame.winfo_children():
+            if isinstance(child, ttk.LabelFrame) and "預覽" in child.cget("text"):
+                # 計算合適的高度比例 (約佔總高度的60%)
+                preview_height = int(height * 0.6)
+                self.example_canvas.config(height=max(200, preview_height - 20))
+
+    def update_widget_size(self, event, widget):
+        """更新特定元件尺寸"""
+        # 針對不同類型元件進行適當調整
+        if isinstance(widget, tk.Canvas):
+            # Canvas 已經通過 sticky 設置自動填充，無需額外處理
+            pass
+        elif isinstance(widget, tk.Text):
+            # 根據框架高度調整文本區域高度
+            parent_height = widget.master.winfo_height()
+            text_height = max(6, min(12, parent_height // 20))
+            widget.config(height=text_height)
 
     def disable_buttons(self):
         """禁用頁面按鈕"""
@@ -79,14 +171,28 @@ class AnalysisPage:
             # 嘗試打開影片並顯示第一幀
             self.app.example_cap = cv2.VideoCapture(file_path)
             if self.app.example_cap.isOpened():
-                ret, frame = self.app.example_cap.read()
-                if ret:
-                    display_frame(frame, self.example_canvas)
+                # 循環嘗試獲取有效幀
+                valid_frame = False
+                for _ in range(10):  # 嘗試前10幀
+                    ret, frame = self.app.example_cap.read()
+                    if ret and frame is not None and frame.size > 0:
+                        valid_frame = True
+                        display_frame(frame, self.example_canvas)
+                        break
+
+                # 如果沒找到有效幀，顯示錯誤
+                if not valid_frame:
+                    messagebox.showerror("錯誤", "無法從影片中讀取有效幀")
+                    self.app.status_var.set("讀取影片幀失敗")
+                    return
 
                 # 獲取影片總時長
                 fps = self.app.example_cap.get(cv2.CAP_PROP_FPS)
                 frame_count = int(self.app.example_cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.app.example_duration = frame_count / fps if fps > 0 else 0
+            else:
+                messagebox.showerror("錯誤", "無法打開影片檔案")
+                self.app.status_var.set("無法打開影片檔案")
 
     def analyze_example_video(self):
         """分析範例影片"""
