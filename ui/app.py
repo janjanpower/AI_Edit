@@ -27,6 +27,10 @@ class IntelligentVideoEditor:
         self.example_duration = 0
         self.target_duration = 0
 
+        # 旋轉設置
+        self.example_rotation = 0
+        self.target_rotation = 0
+
         # 初始化影片處理器
         self.video_processor = VideoProcessor()
 
@@ -35,6 +39,12 @@ class IntelligentVideoEditor:
         self.target_objects = {}   # 存儲目標影片中的物件
         self.important_objects = []  # 使用者選定的重要物件
         self.object_model = None  # 物件檢測模型
+
+        # 目標物件追蹤相關
+        self.target_object_roi = None  # 目標物件的區域 (x, y, w, h)
+        self.target_object_features = None  # 目標物件的特徵
+        self.target_object_track_ids = set()  # 目標物件的追蹤 ID
+        self.target_object_timestamps = []  # 目標物件出現的時間戳
 
         # 剪輯偏好
         self.object_transitions = {}  # 物件間的轉場模式 {(物件A, 物件B): 次數}
@@ -98,8 +108,6 @@ class IntelligentVideoEditor:
         """更新進度信息"""
         self.status_var.set(message)
 
-    # 在app.py中的initialize_object_detection方法中添加禁用更新檢查：
-
     def initialize_object_detection(self):
         """初始化物件檢測模型"""
         try:
@@ -122,3 +130,19 @@ class IntelligentVideoEditor:
         except Exception as e:
             messagebox.showerror("錯誤", f"加載物件檢測模型失敗: {str(e)}")
             self.status_var.set("物件檢測模型加載失敗")
+
+    def compare_features(self, features1, features2):
+        """比較兩個特徵的相似度"""
+        if features1 is None or features2 is None:
+            return 0
+
+        # 如果都有顏色直方圖特徵，比較直方圖
+        if 'color_hist' in features1 and 'color_hist' in features2:
+            similarity = cv2.compareHist(
+                features1['color_hist'],
+                features2['color_hist'],
+                cv2.HISTCMP_CORREL
+            )
+            return max(0, similarity)  # 確保相似度非負
+
+        return 0

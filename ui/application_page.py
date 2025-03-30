@@ -1,16 +1,21 @@
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import threading
-import cv2
 
+import cv2
+from ui.target_selection import ObjectSelectionTool
 from utils.image_utils import display_frame
+
 
 class ApplicationPage:
     def __init__(self, parent, app):
         self.app = app
         self.frame = ttk.Frame(parent)
+        self.rotation_angle = 0  # 預設旋轉角度為0
         self.setup_ui()
+        # 初始化為 None，之後再創建
+        self.object_selection_tool = None
 
     def setup_ui(self):
         # 上傳目標素材區域
@@ -22,6 +27,17 @@ class ApplicationPage:
 
         self.target_video_label = ttk.Label(target_frame, text="尚未選擇素材")
         self.target_video_label.pack(pady=5)
+
+        # 影片旋轉控制
+        rotation_frame = ttk.Frame(target_frame)
+        rotation_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(rotation_frame, text="影片旋轉：").pack(side=tk.LEFT, padx=5)
+
+        # 建立旋轉按鈕
+        self.rotate_btn = ttk.Button(rotation_frame, text="旋轉 180°", command=self.toggle_rotation)
+        self.rotate_btn.pack(side=tk.LEFT, padx=5)
+        self.rotate_btn.config(state=tk.DISABLED)  # 初始禁用
 
         # 目標影片預覽區域
         preview_frame = ttk.LabelFrame(self.frame, text="目標素材預覽")
@@ -79,12 +95,39 @@ class ApplicationPage:
         self.cut_preview_text.pack(pady=10, padx=10, fill=tk.X)
         self.cut_preview_text.config(state=tk.DISABLED)
 
+    def toggle_rotation(self):
+        """切換影片旋轉角度"""
+        if self.rotation_angle == 0:
+            self.rotation_angle = 180
+        else:
+            self.rotation_angle = 0
+
+        # 更新按鈕文字
+        self.rotate_btn.config(text=f"旋轉 {(self.rotation_angle + 180) % 360}°")
+
+        # 重新顯示影片幀
+        if self.app.target_cap and self.app.target_cap.isOpened():
+            # 先將影片指針設置到開頭
+            self.app.target_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.app.target_cap.read()
+            if ret:
+                display_frame(frame, self.target_canvas, self.rotation_angle)
+
+            # 記錄旋轉狀態到app
+            self.app.target_rotation = self.rotation_angle
+
     def disable_buttons(self):
         """禁用頁面按鈕"""
         self.target_btn.config(state=tk.DISABLED)
         self.apply_btn.config(state=tk.DISABLED)
         self.object_scale.config(state=tk.DISABLED)
         self.density_scale.config(state=tk.DISABLED)
+        self.rotate_btn.config(state=tk.DISABLED)
+
+        # 如果已創建物件選擇工具，禁用其按鈕
+        if self.object_selection_tool:
+            self.object_selection_tool.select_btn.config(state=tk.DISABLED)
+            self.object_selection_tool.clear_btn.config(state=tk.DISABLED)
 
     def enable_buttons(self):
         """啟用頁面按鈕"""
@@ -92,6 +135,16 @@ class ApplicationPage:
         self.apply_btn.config(state=tk.NORMAL)
         self.object_scale.config(state=tk.NORMAL)
         self.density_scale.config(state=tk.NORMAL)
+
+        # 只有在有影片時才啟用旋轉按鈕
+        if self.app.target_video_path:
+            self.rotate_btn.config(state=tk.NORMAL)
+
+        # 如果已創建物件選擇工具，啟用其按鈕
+        if self.object_selection_tool:
+            self.object_selection_tool.select_btn.config(state=tk.NORMAL)
+            if self.app.target_object_roi:
+                self.object_selection_tool.clear_btn.config(state=tk.NORMAL)
 
     def select_target_video(self):
         """選擇目標素材"""
@@ -110,12 +163,22 @@ class ApplicationPage:
             if self.app.target_cap.isOpened():
                 ret, frame = self.app.target_cap.read()
                 if ret:
-                    display_frame(frame, self.target_canvas)
+                    display_frame(frame, self.target_canvas, self.rotation_angle)
 
                 # 獲取影片總時長
                 fps = self.app.target_cap.get(cv2.CAP_PROP_FPS)
                 frame_count = int(self.app.target_cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 self.app.target_duration = frame_count / fps if fps > 0 else 0
+
+                # 創建目標物件選擇工具
+                if self.object_selection_tool is None:
+                    self.object_selection_tool = ObjectSelectionTool(self.frame, self.app, self.target_canvas)
+
+                # 啟用旋轉按鈕
+                self.rotate_btn.config(state=tk.NORMAL)
+
+                # 存儲目前的旋轉角度到app
+                self.app.target_rotation = self.rotation_angle
 
     def apply_cutting_style(self):
         """應用剪輯風格"""

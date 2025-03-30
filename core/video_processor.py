@@ -7,7 +7,7 @@ class VideoProcessor:
     def __init__(self):
         pass
 
-    def analyze_example_video(self, video_path, app, use_object_detection=True):
+    def analyze_example_video(self, video_path, app, use_object_detection=True, rotation=0):
         """分析範例影片的剪輯風格和物件特徵"""
         # 打開影片
         cap = cv2.VideoCapture(video_path)
@@ -44,6 +44,15 @@ class VideoProcessor:
             ret, frame = cap.read()
             if not ret:
                 break
+
+            # 應用旋轉
+            if rotation != 0:
+                if rotation == 90:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                elif rotation == 180:
+                    frame = cv2.rotate(frame, cv2.ROTATE_180)
+                elif rotation == 270:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
             # 轉換為灰度用於場景變化檢測
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -183,7 +192,7 @@ class VideoProcessor:
         cap.release()
 
     def apply_cutting_style(self, video_path, app, object_priority=0.7, density_factor=1.0):
-        """將分析出的剪輯風格應用到目標影片"""
+        """將分析出的剪輯風格應用到目標影片，支持目標物件追蹤"""
         # 打開目標影片
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -196,6 +205,8 @@ class VideoProcessor:
 
         # 重置目標影片物件統計
         app.target_objects = {}
+        app.target_object_track_ids = set()
+        app.target_object_timestamps = []
 
         # 設置分析參數
         threshold = 35  # 場景變化檢測閾值
@@ -206,6 +217,7 @@ class VideoProcessor:
         app.suggested_cuts = []  # 清空建議剪輯點列表
         scene_changes = []  # 所有潛在的場景變化點
         object_scenes = []  # 包含重要物件的場景 [(開始幀, 結束幀, 物件列表)]
+        target_object_occurrences = []  # 目標物件出現的段落 [(開始幀, 結束幀)]
 
         # 每隔幾幀進行物件檢測
         detection_interval = 10  # 每10幀檢測一次物件
@@ -214,29 +226,62 @@ class VideoProcessor:
         current_scene_start = 0
         current_scene_objects = set()
 
+        # 使用 Ultralytics 追蹤功能
+        tracker_active = app.target_object_features is not None
+        target_similarity_threshold = 0.6  # 目標物件相似度閾值
+
+        # 追蹤目標物件
+        target_object_class = None
+        if app.target_object_features and 'class' in app.target_object_features:
+            target_object_class = app.target_object_features['class']
+
+        # 目標物件狀態
+        target_object_tracking = False
+        target_object_start_frame = None
+
         while True:
             ret, frame = cap.read()
             if not ret:
                 # 處理最後一個場景
                 if current_scene_objects and frame_idx > current_scene_start:
                     object_scenes.append((current_scene_start, frame_idx, list(current_scene_objects)))
+
+                # 處理最後一個目標物件片段
+                if target_object_tracking and target_object_start_frame is not None:
+                    target_object_occurrences.append((target_object_start_frame, frame_idx))
+
                 break
+
+            # 應用旋轉
+            if app.target_rotation != 0:
+                if app.target_rotation == 90:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                elif app.target_rotation == 180:
+                    frame = cv2.rotate(frame, cv2.ROTATE_180)
+                elif app.target_rotation == 270:
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
             # 轉換為灰度用於場景變化檢測
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-            # 物件檢測 (每隔幾幀)
+            # 物件檢測和追蹤 (每隔幾幀)
             if frame_idx % detection_interval == 0:
                 # 更新進度
                 progress = (frame_idx / frame_count) * 100
                 app.root.after(0, lambda p=progress: app.update_progress(f"分析進度: {p:.1f}%, 檢測物件中..."))
 
-                # 進行物件檢測
-                results = app.object_model(frame)
+                # 進行物件檢測與追蹤
+                if tracker_active:
+                    # 使用追蹤功能
+                    results = app.object_model.track(frame, persist=True)
+                else:
+                    # 只進行檢測
+                    results = app.object_model(frame)
 
-                # 處理檢測結果
+                # 處理檢測和追蹤結果
                 timestamp = frame_idx / fps
                 frame_objects = set()
+                target_object_detected = False
 
                 for r in results:
                     boxes = r.boxes
@@ -258,12 +303,52 @@ class VideoProcessor:
                                 app.target_objects[cls_name][0] += 1
                                 app.target_objects[cls_name][2].append(timestamp)
 
-                # 檢查是否有重要物件
-                important_detected = False
-                for obj in app.important_objects:
-                    if obj in frame_objects:
-                        important_detected = True
-                        current_scene_objects.add(obj)
+                            # 檢查是否是目標物件類型
+                            if target_object_class and cls_name == target_object_class:
+                                # 獲取物件區域
+                                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                                obj_region = frame[int(y1):int(y2), int(x1):int(x2)]
+
+                                if obj_region.size > 0:  # 確保區域有效
+                                    # 提取物件特徵
+                                    obj_features = self.extract_object_features(obj_region)
+
+                                    # 比較與目標物件的相似度
+                                    similarity = self.compare_features(
+                                        app.target_object_features,
+                                        obj_features
+                                    )
+
+                                    if similarity > target_similarity_threshold:
+                                        target_object_detected = True
+
+                                        # 如果有追蹤ID，記錄它
+                                        if hasattr(box, 'id') and box.id is not None:
+                                            track_id = int(box.id)
+                                            app.target_object_track_ids.add(track_id)
+
+                # 更新目標物件追蹤狀態
+                if target_object_detected:
+                    # 記錄目標物件時間戳
+                    app.target_object_timestamps.append(timestamp)
+
+                    # 如果之前沒有追蹤，開始新的追蹤段落
+                    if not target_object_tracking:
+                        target_object_tracking = True
+                        target_object_start_frame = frame_idx
+                else:
+                    # 如果之前在追蹤，結束追蹤段落
+                    if target_object_tracking:
+                        target_object_tracking = False
+                        if target_object_start_frame is not None:
+                            target_object_occurrences.append(
+                                (target_object_start_frame, frame_idx)
+                            )
+                            target_object_start_frame = None
+
+                # 更新當前場景物件
+                for obj in frame_objects:
+                    current_scene_objects.add(obj)
 
             # 場景變化檢測
             if prev_frame is None:
@@ -310,6 +395,36 @@ class VideoProcessor:
 
         # 應用範例影片剪輯風格到物件場景
         candidate_cuts = []
+
+        # 如果有特定目標物件，優先處理包含目標物件的片段
+        if tracker_active and target_object_occurrences:
+            app.root.after(0, lambda: app.update_progress(f"發現目標物件出現 {len(target_object_occurrences)} 次"))
+
+            # 處理每個目標物件出現的段落
+            for start_frame, end_frame in target_object_occurrences:
+                # 將段落起始和結束點加入候選剪輯點
+                candidate_cuts.append(start_frame)
+                candidate_cuts.append(end_frame)
+
+                # 如果段落較長，考慮在段落內部添加剪輯點
+                segment_duration = (end_frame - start_frame) / fps
+
+                if segment_duration > app.avg_segment_duration * 1.5:
+                    # 在段落中找適合的切點
+                    internal_changes = [
+                        (idx, score) for idx, score in scene_changes
+                        if start_frame < idx < end_frame
+                    ]
+
+                    # 選擇變化最顯著的點
+                    internal_changes.sort(key=lambda x: x[1], reverse=True)
+
+                    # 添加適當數量的內部剪輯點
+                    segments_needed = int(segment_duration / app.avg_segment_duration)
+
+                    if segments_needed > 1 and internal_changes:
+                        for i in range(min(segments_needed - 1, len(internal_changes))):
+                            candidate_cuts.append(internal_changes[i][0])
 
         # 基於物件場景選擇剪輯點
         for i, (start, end, objects) in enumerate(object_scenes):
@@ -393,6 +508,41 @@ class VideoProcessor:
 
         cap.release()
 
+    def compare_features(self, features1, features2):
+        """比較兩個物件特徵的相似度"""
+        if features1 is None or features2 is None:
+            return 0
+
+        # 比較顏色直方圖
+        if 'color_hist' in features1 and 'color_hist' in features2:
+            similarity = cv2.compareHist(
+                features1['color_hist'],
+                features2['color_hist'],
+                cv2.HISTCMP_CORREL
+            )
+            return max(0, similarity)  # 確保相似度非負
+
+        return 0
+
+    def extract_object_features(self, image):
+        """從物件圖像中提取特徵"""
+        if image.size == 0 or image.shape[0] == 0 or image.shape[1] == 0:
+            return None
+
+        # 轉換到HSV色彩空間
+        try:
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        except:
+            return None
+
+        # 計算直方圖
+        hist = cv2.calcHist([hsv], [0, 1], None, [30, 32], [0, 180, 0, 256])
+
+        # 歸一化直方圖
+        cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
+
+        return {'color_hist': hist}
+
     def export_video(self, input_path, output_path, cut_points, app, progress_window, progress_var, percent_label):
         """導出最終剪輯影片，移除淡入淡出效果"""
         try:
@@ -438,6 +588,15 @@ class VideoProcessor:
                     ret, frame = cap.read()
                     if not ret:
                         break
+
+                    # 應用旋轉（如果有）
+                    if app.target_rotation != 0:
+                        if app.target_rotation == 90:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                        elif app.target_rotation == 180:
+                            frame = cv2.rotate(frame, cv2.ROTATE_180)
+                        elif app.target_rotation == 270:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
                     # 寫入幀
                     out.write(frame)

@@ -27,7 +27,7 @@ class AnalysisPage:
         preview_frame = ttk.LabelFrame(self.frame, text="範例影片預覽")
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.example_canvas = tk.Canvas(preview_frame, bg="black", width=640, height=360)
+        self.example_canvas = tk.Canvas(preview_frame, bg="black", width=320, height=180)
         self.example_canvas.pack(pady=10)
 
         # 分析控制區域
